@@ -8,7 +8,7 @@ A fast, mobile-first web app where students select their team, upload a photo, a
 
 - **100% Client-Side Photo Compositing (`1500×1500`)**: Student photos never leave their device. Supports EXIF orientation (`createImageBitmap`), automatic downscaling for oversized camera photos (`>4000px`), touch drag, pinch-to-zoom, mouse wheel zoom, zoom slider (`0.3×` to `5.0×` of cover-fit), 90° left/right rotation, horizontal mirror flip, background color swatches (White, Black, Team Accent), and an optional preview-only circular profile crop guide.
 - **Dynamic Teams & Frame Caching**: Stored in Netlify Blobs (`dp-blast-store-1500`). Seeds 7 placeholder teams on first run (once only). Frame images are served from `/api/frames/:id?v={frameVersion}` with `Cache-Control: public, max-age=31536000, immutable`.
-- **Admin Panel (`/admin`)**: Password-protected with constant-time HMAC comparison, rate-limited login (max 5 failed attempts per IP per 10 minutes), and 8-hour HMAC-SHA256 bearer tokens. Add, rename, recolor, reorder, replace frames (auto-bumping `frameVersion`), and delete teams. Validates that uploaded frames are `1500×1500` PNGs (`≤ 5 MB`) and warns if an uploaded PNG has no transparent pixels.
+- **Admin Panel (`/admin`)**: Password-protected with constant-time HMAC comparison, rate-limited login (max 5 failed attempts per IP per 10 minutes), and 8-hour HMAC-SHA256 bearer tokens. Includes a **Teams** tab (add, rename, recolor, reorder, replace `1500×1500` PNG frames `≤ 5 MB`, delete) and a **Monitor** tab (live concurrent users bar with green/amber/red states, daily peak & rejection cards, 5-second auto-refresh, and a 4-quarter histogram for Today / Last 7 days / Last 30 days).
 - **Traffic Gatekeeper (Students Only)**: Caps concurrent active student sessions at `MAX_CONCURRENT` (default `50`), limits each IP to `MAX_PER_IP` (default `3`) active sessions and `START_LIMIT_PER_WINDOW` (default `10`) session starts per 10 minutes, sends heartbeats every 20 seconds while visible, frees slots via `navigator.sendBeacon` on tab close, and fails open if the gatekeeper endpoint is unreachable.
 
 ---
@@ -25,6 +25,7 @@ Configure these in **Netlify Dashboard → Project configuration → Environment
 | `MAX_PER_IP` | No | `3` | Maximum concurrent active student sessions per IP address |
 | `SESSION_TTL_SECONDS` | No | `60` | Seconds since last heartbeat before a student session expires |
 | `START_LIMIT_PER_WINDOW` | No | `10` | Maximum new student session starts per IP per 10-minute window |
+| `TIMEZONE` | No | `Asia/Manila` | IANA timezone used for daily & quarterly usage tracking in `/admin` Monitor |
 
 ---
 
@@ -62,5 +63,21 @@ npm run build
 
 # Deploy to Netlify production
 npx netlify deploy --build --prod
+
+# Run the Gatekeeper & Monitor Limiter test script against local dev server
+TEST_BASE_URL=http://localhost:8888 ADMIN_PASSWORD=your-password node scripts/test-limiter.mjs
 ```
+
+### Testing the Limiter & Monitor (`scripts/test-limiter.mjs`)
+
+1. Start the local dev server (`npm run dev` or `npx netlify dev`) with your `.env` configured.
+2. Run:
+   ```bash
+   node scripts/test-limiter.mjs
+   ```
+   Optional environment variables:
+   - `TEST_BASE_URL` (defaults to `http://localhost:8888`)
+   - `ADMIN_PASSWORD` (defaults to `TempAdminPass2026!`)
+
+The script verifies `/api/admin/stats` auth (`401` without token), tests per-IP blocking, ramps sessions through **Normal (`<70%` green)**, **Near-Full (`70–89%` amber)**, and **Full (`100%` red)** states, verifies `?days=1|7|30` quarter stats contain no IPs/PII, and cleans up all test sessions via `/api/session/end`.
 

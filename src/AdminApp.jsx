@@ -36,12 +36,48 @@ export default function AdminApp() {
   const [confirmDeleteTeam, setConfirmDeleteTeam] = useState(null);
   const [busyActionId, setBusyActionId] = useState(null);
 
+  // Admin tabs & live monitor state
+  const [activeTab, setActiveTab] = useState('teams'); // 'teams' | 'monitor'
+  const [statsDays, setStatsDays] = useState(1); // 1 | 7 | 30
+  const [stats, setStats] = useState(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState('');
+
   const handleLogout = useCallback(() => {
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken('');
     setPassword('');
     setEditingTeamId(null);
+    setStats(null);
   }, []);
+
+  const fetchStats = useCallback(
+    async (daysToFetch = statsDays) => {
+      if (!token) return;
+      setStatsLoading(true);
+      setStatsError('');
+      try {
+        const res = await fetch(`/api/admin/stats?days=${daysToFetch}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        });
+        if (res.status === 401) {
+          handleLogout();
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to load monitor stats.');
+        }
+        setStats(data);
+      } catch (err) {
+        setStatsError(err.message || 'Could not load usage statistics.');
+      } finally {
+        setStatsLoading(false);
+      }
+    },
+    [token, statsDays, handleLogout]
+  );
 
   const fetchTeams = useCallback(async () => {
     setLoadingTeams(true);
@@ -61,8 +97,33 @@ export default function AdminApp() {
   useEffect(() => {
     if (token) {
       fetchTeams();
+      fetchStats(statsDays);
     }
-  }, [token, fetchTeams]);
+  }, [token, fetchTeams, fetchStats, statsDays]);
+
+  // Auto-refresh every 5 seconds while visible and on the Monitor tab
+  useEffect(() => {
+    if (!token || activeTab !== 'monitor') return;
+
+    const tick = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStats(statsDays);
+      }
+    };
+
+    const interval = setInterval(tick, 5000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchStats(statsDays);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [token, activeTab, statsDays, fetchStats]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -376,6 +437,33 @@ export default function AdminApp() {
       </header>
 
       <main className="main-container admin-main">
+        {/* TAB SWITCHER */}
+        <div className="admin-tabs-bar" role="tablist" aria-label="Admin sections">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'teams'}
+            className={`admin-tab-btn ${activeTab === 'teams' ? 'admin-tab-active' : ''}`}
+            onClick={() => setActiveTab('teams')}
+          >
+            Teams ({teams.length})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeTab === 'monitor'}
+            className={`admin-tab-btn ${activeTab === 'monitor' ? 'admin-tab-active' : ''}`}
+            onClick={() => setActiveTab('monitor')}
+          >
+            Monitor
+            {stats && (
+              <span className="tab-live-pill">
+                {stats.activeNow}/{stats.maxConcurrent}
+              </span>
+            )}
+          </button>
+        </div>
+
         {globalError && (
           <div className="alert-error" role="alert">
             {globalError}
@@ -387,7 +475,302 @@ export default function AdminApp() {
           </div>
         )}
 
-        {/* ADD NEW TEAM FORM */}
+        {/* COMPACT LIVE CONCURRENT CARD ON TEAMS TAB */}
+        {activeTab === 'teams' && stats && (
+          <div className="admin-live-banner">
+            <div className="admin-live-banner-info">
+              <strong>Live Concurrent Users:</strong>{' '}
+              <span className="live-count-inline">
+                {stats.activeNow} / {stats.maxConcurrent}
+              </span>
+              {stats.activeNow >= stats.maxConcurrent && (
+                <span className="live-full-tag">FULL, students are being queued</span>
+              )}
+            </div>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => setActiveTab('monitor')}
+            >
+              Open Monitor →
+            </button>
+          </div>
+        )}
+
+        {/* MONITOR TAB */}
+        {activeTab === 'monitor' && (() => {
+          const activeNow = stats?.activeNow ?? 0;
+          const maxConcurrent = stats?.maxConcurrent ?? 50;
+          const ratio = maxConcurrent > 0 ? activeNow / maxConcurrent : 0;
+          const pct = Math.min(100, Math.round(ratio * 100));
+          const isFull = activeNow >= maxConcurrent;
+          let loadStateClass = 'load-green';
+          if (isFull || pct >= 90) loadStateClass = 'load-red';
+          else if (pct >= 70) loadStateClass = 'load-amber';
+
+          const quarters = stats?.quarters || [
+            { key: 'Q1', label: 'Q1 (12am–6am)', sessionsStarted: 0, peakConcurrent: 0 },
+            { key: 'Q2', label: 'Q2 (6am–12pm)', sessionsStarted: 0, peakConcurrent: 0 },
+            { key: 'Q3', label: 'Q3 (12pm–6pm)', sessionsStarted: 0, peakConcurrent: 0 },
+            { key: 'Q4', label: 'Q4 (6pm–12am)', sessionsStarted: 0, peakConcurrent: 0 },
+          ];
+
+          const maxSessions = Math.max(1, ...quarters.map((q) => q.sessionsStarted));
+          const maxPeak = Math.max(1, maxConcurrent, ...quarters.map((q) => q.peakConcurrent));
+          const xCenters = [55, 152, 248, 345];
+          const barWidth = 46;
+          const baselineY = 160;
+          const chartHeight = 122;
+
+          const peakPoints = quarters
+            .map((q, i) => {
+              const py = baselineY - Math.round((q.peakConcurrent / maxPeak) * chartHeight);
+              return `${xCenters[i]},${py}`;
+            })
+            .join(' ');
+
+          return (
+            <section className="monitor-section" aria-label="Traffic Monitor">
+              <div className="monitor-toolbar">
+                <div className="monitor-updated">
+                  Last updated:{' '}
+                  <strong>
+                    {stats?.updatedAt
+                      ? new Date(stats.updatedAt).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                          second: '2-digit',
+                        })
+                      : '—'}
+                  </strong>
+                  <span className="monitor-auto-note"> • Auto-refreshes every 5s</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={statsLoading}
+                  onClick={() => fetchStats(statsDays)}
+                >
+                  {statsLoading ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+
+              {statsError && (
+                <div className="alert-error" role="alert">
+                  {statsError}
+                </div>
+              )}
+
+              {/* Live Concurrency Card */}
+              <div className={`admin-card monitor-live-card ${loadStateClass}`}>
+                <div className="monitor-live-header">
+                  <div>
+                    <h2>Live Concurrent Students</h2>
+                    <div className="monitor-live-number">
+                      {activeNow} <span className="monitor-live-max">/ {maxConcurrent}</span>
+                    </div>
+                  </div>
+                  <div className="monitor-live-pct">{pct}% capacity</div>
+                </div>
+
+                <div
+                  className="monitor-progress-track"
+                  role="progressbar"
+                  aria-valuenow={activeNow}
+                  aria-valuemin={0}
+                  aria-valuemax={maxConcurrent}
+                >
+                  <div className="monitor-progress-fill" style={{ width: `${pct}%` }} />
+                </div>
+
+                {isFull && (
+                  <p className="monitor-full-alert" role="status">
+                    FULL, students are being queued
+                  </p>
+                )}
+              </div>
+
+              {/* 3 Stat Cards */}
+              <div className="monitor-stats-grid">
+                <div className="admin-card monitor-stat-card">
+                  <div className="stat-label">Peak today</div>
+                  <div className="stat-value">{stats?.peakToday ?? 0}</div>
+                </div>
+                <div className="admin-card monitor-stat-card">
+                  <div className="stat-label">Students turned away today (full)</div>
+                  <div className="stat-value">{stats?.rejectedFullToday ?? 0}</div>
+                </div>
+                <div className="admin-card monitor-stat-card">
+                  <div className="stat-label">Students blocked today (per-IP)</div>
+                  <div className="stat-value">{stats?.rejectedIpToday ?? 0}</div>
+                </div>
+              </div>
+
+              {/* 4-Quarter Histogram */}
+              <div className="admin-card monitor-chart-card">
+                <div className="monitor-chart-header">
+                  <div>
+                    <h2>Sessions by Time of Day</h2>
+                    <p className="monitor-tz-caption">
+                      Timezone: {stats?.timezone || 'Asia/Manila'}
+                    </p>
+                  </div>
+                  <div className="range-toggle" role="group" aria-label="Time range">
+                    {[
+                      { label: 'Today', value: 1 },
+                      { label: 'Last 7 days', value: 7 },
+                      { label: 'Last 30 days', value: 30 },
+                    ].map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`btn btn-sm ${
+                          statsDays === opt.value ? 'btn-primary' : 'btn-secondary'
+                        }`}
+                        onClick={() => setStatsDays(opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="chart-legend">
+                  <span className="legend-item">
+                    <span className="legend-swatch legend-bar" /> Sessions started
+                  </span>
+                  <span className="legend-item">
+                    <span className="legend-swatch legend-peak" /> Peak concurrent (per quarter)
+                  </span>
+                </div>
+
+                <div className="svg-chart-wrap">
+                  <svg
+                    viewBox="0 0 400 222"
+                    className="quarter-chart-svg"
+                    role="img"
+                    aria-label="Sessions started and peak concurrent by quarter of the day"
+                  >
+                    {/* Baseline and mid gridline */}
+                    <line x1="16" y1={baselineY - chartHeight} x2="384" y2={baselineY - chartHeight} stroke="#e2e8f0" strokeDasharray="4 4" />
+                    <line x1="16" y1={baselineY - Math.round(chartHeight / 2)} x2="384" y2={baselineY - Math.round(chartHeight / 2)} stroke="#e2e8f0" strokeDasharray="4 4" />
+                    <line x1="16" y1={baselineY} x2="384" y2={baselineY} stroke="#cbd5e1" strokeWidth="1.5" />
+
+                    {quarters.map((q, i) => {
+                      const cx = xCenters[i];
+                      const isCurrent = statsDays === 1 && stats?.currentQuarter === q.key;
+                      const barH =
+                        q.sessionsStarted > 0
+                          ? Math.max(4, Math.round((q.sessionsStarted / maxSessions) * chartHeight))
+                          : 0;
+                      const barY = baselineY - barH;
+                      const shortRanges = ['12a–6a', '6a–12p', '12p–6p', '6p–12a'];
+
+                      return (
+                        <g key={q.key}>
+                          {isCurrent && (
+                            <rect
+                              x={cx - 42}
+                              y={12}
+                              width={84}
+                              height={204}
+                              rx={8}
+                              fill="#eff6ff"
+                              stroke="#bfdbfe"
+                              strokeWidth="1"
+                            />
+                          )}
+
+                          <rect
+                            x={cx - barWidth / 2}
+                            y={barY}
+                            width={barWidth}
+                            height={barH}
+                            rx={5}
+                            fill={isCurrent ? '#2563eb' : '#60a5fa'}
+                          />
+
+                          {/* Exact sessionsStarted value above bar */}
+                          <text
+                            x={cx}
+                            y={Math.max(24, barY - 6)}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fontWeight="700"
+                            fill="#0f172a"
+                          >
+                            {q.sessionsStarted}
+                          </text>
+
+                          {/* Quarter label + range + peak */}
+                          <text
+                            x={cx}
+                            y={178}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fontWeight={isCurrent ? '800' : '700'}
+                            fill={isCurrent ? '#1d4ed8' : '#0f172a'}
+                          >
+                            {q.key}
+                            {isCurrent ? ' ★' : ''}
+                          </text>
+                          <text
+                            x={cx}
+                            y={193}
+                            textAnchor="middle"
+                            fontSize="10"
+                            fill="#64748b"
+                          >
+                            {shortRanges[i]}
+                          </text>
+                          <text
+                            x={cx}
+                            y={208}
+                            textAnchor="middle"
+                            fontSize="10"
+                            fontWeight="700"
+                            fill="#b45309"
+                          >
+                            Peak: {q.peakConcurrent}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Secondary peakConcurrent line & markers */}
+                    <polyline
+                      fill="none"
+                      stroke="#f59e0b"
+                      strokeWidth="2.2"
+                      strokeDasharray="4 3"
+                      points={peakPoints}
+                    />
+                    {quarters.map((q, i) => {
+                      const cx = xCenters[i];
+                      const py = baselineY - Math.round((q.peakConcurrent / maxPeak) * chartHeight);
+                      return (
+                        <circle
+                          key={`${q.key}-peak`}
+                          cx={cx}
+                          cy={py}
+                          r="4.5"
+                          fill="#f59e0b"
+                          stroke="#ffffff"
+                          strokeWidth="1.5"
+                        />
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            </section>
+          );
+        })()}
+
+        {/* TEAMS TAB: ADD NEW TEAM FORM & LIST */}
+        {activeTab === 'teams' && (
+          <>
+            {/* ADD NEW TEAM FORM */}
         <section className="admin-card" aria-label="Add new team">
           <h2>Add New Team ({teams.length}/20)</h2>
           <form className="admin-add-form" onSubmit={handleCreateTeam}>
@@ -639,6 +1022,8 @@ export default function AdminApp() {
             </div>
           )}
         </section>
+          </>
+        )}
       </main>
     </div>
   );

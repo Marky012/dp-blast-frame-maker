@@ -197,6 +197,45 @@ export function exportCompositeBlob({ photo, frameImage, transform, bgColor }) {
 }
 
 /**
+ * Decodes a data URL (e.g. data:image/png;base64,...) synchronously into a Blob.
+ */
+export function dataUrlToBlob(dataUrl) {
+  const [header, base64] = String(dataUrl).split(',');
+  const mimeMatch = header.match(/:(.*?);/);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+/**
+ * Synchronously exports the composite to { blob, dataUrl } at full OUTPUT_SIZE
+ * so mobile browsers retain user-gesture activation for immediate downloads.
+ */
+export function exportCompositeSync({ photo, frameImage, transform, bgColor }) {
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = OUTPUT_SIZE;
+  exportCanvas.height = OUTPUT_SIZE;
+  const ctx = exportCanvas.getContext('2d');
+
+  renderComposite(ctx, {
+    photo,
+    frameImage,
+    transform,
+    bgColor,
+    showCropGuide: false,
+  });
+
+  const dataUrl = exportCanvas.toDataURL('image/png');
+  const blob = dataUrlToBlob(dataUrl);
+  return { blob, dataUrl };
+}
+
+/**
  * Sanitizes team name for filename: dp-blast-{teamname}.png
  */
 export function buildExportFilename(teamName) {

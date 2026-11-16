@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { getStore } from '@netlify/blobs';
 import { getEnv, getClientIp } from './_lib/env.mjs';
+import { recordSessionStartEvent } from './_lib/usage-stats.mjs';
 
 const GATEKEEPER_STORE = 'dp-blast-gatekeeper';
 const STATE_KEY = 'gatekeeper-state';
@@ -14,7 +15,7 @@ function runSerialized(fn) {
   return res;
 }
 
-function getLimits() {
+export function getLimits() {
   return {
     maxConcurrent: parseInt(getEnv('MAX_CONCURRENT', '50'), 10) || 50,
     maxPerIp: parseInt(getEnv('MAX_PER_IP', '3'), 10) || 3,
@@ -23,8 +24,30 @@ function getLimits() {
   };
 }
 
-function getGatekeeperStore() {
+export function getGatekeeperStore() {
   return getStore({ name: GATEKEEPER_STORE, consistency: 'strong' });
+}
+
+export async function getActiveSessionStatus() {
+  const limits = getLimits();
+  const ttlMs = limits.sessionTtlSeconds * 1000;
+  const store = getGatekeeperStore();
+  const state = await store.get(STATE_KEY, { type: 'json', consistency: 'strong' });
+  const now = Date.now();
+
+  let activeNow = 0;
+  if (state && state.sessions && typeof state.sessions === 'object') {
+    for (const sess of Object.values(state.sessions)) {
+      if (sess && now - sess.lastSeen <= ttlMs) {
+        activeNow += 1;
+      }
+    }
+  }
+
+  return {
+    activeNow,
+    maxConcurrent: limits.maxConcurrent,
+  };
 }
 
 async function mutateState(mutator) {
@@ -42,13 +65,13 @@ async function mutateState(mutator) {
 
     const result = mutator(currentState);
     if (result.skipWrite) {
-      return result.response;
+      return result;
     }
 
     const writeOpts = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
     const writeRes = await store.setJSON(STATE_KEY, currentState, writeOpts);
     if (!writeRes || writeRes.modified !== false) {
-      return result.response;
+      return result;
     }
     // Small random backoff before retry on ETag conflict
     await new Promise((r) => setTimeout(r, 15 + Math.floor(Math.random() * 25)));
@@ -63,7 +86,7 @@ async function mutateState(mutator) {
   if (!result.skipWrite) {
     await store.setJSON(STATE_KEY, state);
   }
-  return result.response;
+  return result;
 }
 
 function purgeExpired(state, now, ttlMs) {
@@ -116,7 +139,7 @@ export default async (req, context) => {
   try {
     return await runSerialized(async () => {
       if (action === 'start') {
-        return await mutateState((state) => {
+        const mutated = await mutateState((state) => {
           const now = Date.now();
           purgeExpired(state, now, ttlMs);
 
@@ -125,6 +148,7 @@ export default async (req, context) => {
             state.sessions[body.sessionId].lastSeen = now;
             return {
               skipWrite: false,
+              eventMeta: null,
               response: Response.json({
                 status: 'ok',
                 sessionId: body.sessionId,
@@ -147,6 +171,7 @@ export default async (req, context) => {
             );
             return {
               skipWrite: false,
+              eventMeta: { outcome: 'rejectedIp', activeCount: activeSessions.length },
               response: Response.json(
                 {
                   status: 'rate_limited',
@@ -164,6 +189,7 @@ export default async (req, context) => {
             const retryAfter = Math.min(limits.sessionTtlSeconds, 30);
             return {
               skipWrite: false,
+              eventMeta: { outcome: 'rejectedIp', activeCount: activeSessions.length },
               response: Response.json(
                 {
                   status: 'rate_limited',
@@ -180,6 +206,7 @@ export default async (req, context) => {
           if (activeSessions.length >= limits.maxConcurrent) {
             return {
               skipWrite: false,
+              eventMeta: { outcome: 'rejectedFull', activeCount: activeSessions.length },
               response: Response.json(
                 {
                   status: 'full',
@@ -202,16 +229,27 @@ export default async (req, context) => {
           }
           state.ipStarts[clientIp].push(now);
 
+          const activeCount = Object.keys(state.sessions).length;
           return {
             skipWrite: false,
+            eventMeta: { outcome: 'started', activeCount },
             response: Response.json({
               status: 'ok',
               sessionId,
-              activeCount: Object.keys(state.sessions).length,
+              activeCount,
               maxConcurrent: limits.maxConcurrent,
             }),
           };
         });
+
+        if (mutated.eventMeta) {
+          try {
+            await recordSessionStartEvent(mutated.eventMeta);
+          } catch (statsErr) {
+            console.error('Usage stats tracking error:', statsErr);
+          }
+        }
+        return mutated.response;
       }
 
       if (action === 'heartbeat') {
@@ -220,7 +258,7 @@ export default async (req, context) => {
           return Response.json({ error: 'Missing sessionId' }, { status: 400 });
         }
 
-        return await mutateState((state) => {
+        const mutated = await mutateState((state) => {
           const now = Date.now();
           purgeExpired(state, now, ttlMs);
 
@@ -241,6 +279,7 @@ export default async (req, context) => {
             response: Response.json({ status: 'ok', sessionId }),
           };
         });
+        return mutated.response;
       }
 
       if (action === 'end') {
@@ -249,7 +288,7 @@ export default async (req, context) => {
           return Response.json({ status: 'ok' });
         }
 
-        return await mutateState((state) => {
+        const mutated = await mutateState((state) => {
           const now = Date.now();
           purgeExpired(state, now, ttlMs);
           delete state.sessions[sessionId];
@@ -258,6 +297,7 @@ export default async (req, context) => {
             response: Response.json({ status: 'ok' }),
           };
         });
+        return mutated.response;
       }
 
       return Response.json({ error: 'Unknown session action' }, { status: 404 });

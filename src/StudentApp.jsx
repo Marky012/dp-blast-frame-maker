@@ -3,6 +3,7 @@ import { OUTPUT_SIZE, BRANDING } from './config.js';
 import {
   loadStudentPhoto,
   renderComposite,
+  exportCompositeSync,
   exportCompositeBlob,
   buildExportFilename,
 } from './utils/image.js';
@@ -20,6 +21,31 @@ const MAX_ZOOM = 5.0;
 
 function clampZoom(z) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+}
+
+function scheduleRevokeUrl(url) {
+  if (!url) return;
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      // Ignore already-revoked URLs
+    }
+  }, 60000);
+}
+
+function triggerBrowserDownload(url, filename) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    if (a.parentNode) {
+      a.parentNode.removeChild(a);
+    }
+  }, 2000);
 }
 
 export default function StudentApp() {
@@ -249,14 +275,17 @@ export default function StudentApp() {
     }
   }, [gateState, fetchTeams]);
 
-  // Clean up export object URL on unmount or change
+  // Defer cleanup of export object URLs so mobile download managers finish reading blobs
+  const exportUrlRef = useRef(null);
+  useEffect(() => {
+    exportUrlRef.current = exportResult?.url || null;
+  }, [exportResult]);
+
   useEffect(() => {
     return () => {
-      if (exportResult?.url) {
-        URL.revokeObjectURL(exportResult.url);
-      }
+      scheduleRevokeUrl(exportUrlRef.current);
     };
-  }, [exportResult]);
+  }, []);
 
   // --- 3. Canvas Rendering with requestAnimationFrame ---
   const scheduleDraw = useCallback(() => {
@@ -436,51 +465,52 @@ export default function StudentApp() {
     setExporting(true);
     setPhotoError('');
     try {
-      const blob = await exportCompositeBlob({
-        photo,
-        frameImage: selectedFrameImage,
-        transform,
-        bgColor,
-      });
+      let blob;
+      let dataUrl = null;
+      try {
+        const syncResult = exportCompositeSync({
+          photo,
+          frameImage: selectedFrameImage,
+          transform,
+          bgColor,
+        });
+        blob = syncResult.blob;
+        dataUrl = syncResult.dataUrl;
+      } catch {
+        blob = await exportCompositeBlob({
+          photo,
+          frameImage: selectedFrameImage,
+          transform,
+          bgColor,
+        });
+      }
+
       const filename = buildExportFilename(selectedTeam.name);
       const url = URL.createObjectURL(blob);
 
-      const fileObj = new File([blob], filename, { type: 'image/png' });
-      const canShare =
-        typeof navigator.canShare === 'function' && navigator.canShare({ files: [fileObj] });
+      let canShare = false;
+      try {
+        const fileObj = new File([blob], filename, { type: 'image/png' });
+        canShare =
+          typeof navigator.canShare === 'function' && navigator.canShare({ files: [fileObj] });
+      } catch {
+        canShare = false;
+      }
 
       if (exportResult?.url) {
-        URL.revokeObjectURL(exportResult.url);
-      }
-      setExportResult({ blob, url, filename, canShare });
-
-      // Trigger standard browser download immediately
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-      const a = document.createElement('a');
-      if ('download' in a && !isIOS) {
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        scheduleRevokeUrl(exportResult.url);
       }
 
+      // Trigger download synchronously within the tap gesture for mobile browser compatibility
+      triggerBrowserDownload(url, filename);
+
+      setExportResult({ blob, url, dataUrl, filename, canShare });
       setScreen('export');
     } catch (err) {
       setPhotoError(err.message || 'Failed to export PNG.');
     } finally {
       setExporting(false);
     }
-  };
-
-  const handleDirectDownload = () => {
-    if (!exportResult) return;
-    const a = document.createElement('a');
-    a.href = exportResult.url;
-    a.download = exportResult.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   };
 
   const handleWebShare = async () => {
@@ -498,7 +528,7 @@ export default function StudentApp() {
 
   const handleStartOver = () => {
     if (exportResult?.url) {
-      URL.revokeObjectURL(exportResult.url);
+      scheduleRevokeUrl(exportResult.url);
     }
     setExportResult(null);
     setScreen('select_team');
@@ -892,25 +922,25 @@ export default function StudentApp() {
 
               <div className="export-preview-wrap">
                 <img
-                  src={exportResult.url}
+                  src={exportResult.dataUrl || exportResult.url}
                   alt="Finished DP Blast preview"
                   className="export-preview-img"
                 />
               </div>
 
               <p className="ios-save-hint">
-                On iPhone/iPad: tap <strong>Save / Share Image</strong> or long-press the image
-                above to save to Photos.
+                On iPhone/iPad or in-app browsers: tap <strong>Download PNG</strong>,{' '}
+                <strong>Share / Save to Photos</strong>, or long-press the image above to save.
               </p>
 
               <div className="export-actions">
-                <button
-                  type="button"
+                <a
+                  href={exportResult.url}
+                  download={exportResult.filename}
                   className="btn btn-success btn-lg"
-                  onClick={handleDirectDownload}
                 >
                   Download PNG ({exportResult.filename})
-                </button>
+                </a>
 
                 {exportResult.canShare && (
                   <button type="button" className="btn btn-primary btn-lg" onClick={handleWebShare}>
