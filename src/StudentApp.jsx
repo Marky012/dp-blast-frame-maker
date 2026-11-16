@@ -75,9 +75,19 @@ export default function StudentApp() {
   const [bgColor, setBgColor] = useState('#ffffff');
   const [showCropGuide, setShowCropGuide] = useState(false);
 
-  // Export state
+  // Export & download progress modal state
   const [exporting, setExporting] = useState(false);
-  const [exportResult, setExportResult] = useState(null); // { blob, url, filename, canShare }
+  const [exportResult, setExportResult] = useState(null); // { blob, url, dataUrl, filename, canShare }
+  const [downloadModal, setDownloadModal] = useState({
+    open: false,
+    progress: 0,
+    statusText: '',
+    done: false,
+    filename: '',
+    url: '',
+    canShare: false,
+  });
+  const downloadTimersRef = useRef([]);
 
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -284,6 +294,7 @@ export default function StudentApp() {
   useEffect(() => {
     return () => {
       scheduleRevokeUrl(exportUrlRef.current);
+      downloadTimersRef.current.forEach((id) => clearTimeout(id));
     };
   }, []);
 
@@ -460,6 +471,41 @@ export default function StudentApp() {
     setTransform(DEFAULT_TRANSFORM);
   };
 
+  const startDownloadModalProgress = useCallback(({ url, filename, canShare }) => {
+    downloadTimersRef.current.forEach((id) => clearTimeout(id));
+    downloadTimersRef.current = [];
+
+    setDownloadModal({
+      open: true,
+      progress: 25,
+      statusText: `Compositing your photo with the ${OUTPUT_SIZE}×${OUTPUT_SIZE} team frame...`,
+      done: false,
+      filename,
+      url,
+      canShare,
+    });
+
+    const t1 = setTimeout(() => {
+      setDownloadModal((prev) => ({
+        ...prev,
+        progress: 65,
+        statusText: `Encoding high-resolution ${OUTPUT_SIZE}×${OUTPUT_SIZE} PNG...`,
+      }));
+    }, 220);
+
+    const t2 = setTimeout(() => {
+      setDownloadModal((prev) => ({
+        ...prev,
+        progress: 100,
+        statusText:
+          'Download started! Check your browser downloads/notifications, or use the buttons below if your phone requires confirmation.',
+        done: true,
+      }));
+    }, 720);
+
+    downloadTimersRef.current = [t1, t2];
+  }, []);
+
   const handleExport = async () => {
     if (!photo || !selectedTeam) return;
     setExporting(true);
@@ -505,12 +551,22 @@ export default function StudentApp() {
       triggerBrowserDownload(url, filename);
 
       setExportResult({ blob, url, dataUrl, filename, canShare });
+      startDownloadModalProgress({ url, filename, canShare });
       setScreen('export');
     } catch (err) {
       setPhotoError(err.message || 'Failed to export PNG.');
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleDownloadAgain = () => {
+    if (!exportResult) return;
+    startDownloadModalProgress({
+      url: exportResult.url,
+      filename: exportResult.filename,
+      canShare: exportResult.canShare,
+    });
   };
 
   const handleWebShare = async () => {
@@ -938,6 +994,7 @@ export default function StudentApp() {
                   href={exportResult.url}
                   download={exportResult.filename}
                   className="btn btn-success btn-lg"
+                  onClick={handleDownloadAgain}
                 >
                   Download PNG ({exportResult.filename})
                 </a>
@@ -974,6 +1031,76 @@ export default function StudentApp() {
           </section>
         )}
       </main>
+
+      {downloadModal.open && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="download-modal-title"
+        >
+          <div className="download-modal-card">
+            <div className="download-modal-header">
+              {downloadModal.done ? (
+                <div className="download-done-badge" aria-hidden="true">
+                  ✓
+                </div>
+              ) : (
+                <div className="spinner download-modal-spinner" aria-hidden="true" />
+              )}
+              <h2 id="download-modal-title">
+                {downloadModal.done ? 'DP Blast Ready!' : 'Preparing Your PNG...'}
+              </h2>
+            </div>
+
+            <div
+              className="download-progress-track"
+              role="progressbar"
+              aria-valuenow={downloadModal.progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div
+                className="download-progress-fill"
+                style={{ width: `${downloadModal.progress}%` }}
+              />
+            </div>
+
+            <div className="download-progress-meta">
+              <span className="download-modal-step">{downloadModal.statusText}</span>
+              <span className="download-progress-pct">{downloadModal.progress}%</span>
+            </div>
+
+            {downloadModal.done && (
+              <div className="download-modal-actions">
+                <a
+                  href={downloadModal.url}
+                  download={downloadModal.filename}
+                  className="btn btn-success btn-block"
+                >
+                  Download PNG Again ({downloadModal.filename})
+                </a>
+                {downloadModal.canShare && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    onClick={handleWebShare}
+                  >
+                    Share / Save to Photos
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-block"
+                  onClick={() => setDownloadModal((m) => ({ ...m, open: false }))}
+                >
+                  Done / View Preview
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <footer className="app-footer">
         <p>{BRANDING.privacyNote}</p>

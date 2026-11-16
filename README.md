@@ -70,7 +70,13 @@ TEST_BASE_URL=http://localhost:8888 ADMIN_PASSWORD=your-password node scripts/te
 
 ### Testing the Limiter & Monitor (`scripts/test-limiter.mjs`)
 
-1. Start the local dev server (`npm run dev` or `npx netlify dev`) with your `.env` configured.
+1. Start the local dev server (`npm run dev` or `npx netlify dev`) with temporary test env vars in `.env`:
+   ```env
+   MAX_CONCURRENT=3
+   MAX_PER_IP=10
+   START_LIMIT_PER_WINDOW=100
+   SESSION_TTL_SECONDS=60
+   ```
 2. Run:
    ```bash
    node scripts/test-limiter.mjs
@@ -78,6 +84,8 @@ TEST_BASE_URL=http://localhost:8888 ADMIN_PASSWORD=your-password node scripts/te
    Optional environment variables:
    - `TEST_BASE_URL` (defaults to `http://localhost:8888`)
    - `ADMIN_PASSWORD` (defaults to `TempAdminPass2026!`)
+   - `TEST_SKIP_TTL=1` (skip waiting for full `SESSION_TTL_SECONDS`)
+   - `TEST_SKIP_PER_IP=1` (skip overriding `MAX_PER_IP` when `MAX_PER_IP` is set above `MAX_CONCURRENT`)
 
-The script verifies `/api/admin/stats` auth (`401` without token), tests per-IP blocking, ramps sessions through **Normal (`<70%` green)**, **Near-Full (`70–89%` amber)**, and **Full (`100%` red)** states, verifies `?days=1|7|30` quarter stats contain no IPs/PII, and cleans up all test sessions via `/api/session/end`.
+The script verifies all 7 limiter & stats checks (3 concurrent starts, 4th HTTP `429 full`, `/end` slot release, `/api/admin/*` availability while full, TTL auto-expiry, per-IP `429` block, and quarter counter tracking in `TIMEZONE` without IPs/PII) and prints a **PASS / FAIL** summary table.
 

@@ -1197,7 +1197,108 @@ body {
 
 .quarter-chart-svg {
   width: 100%;
+  max-width: 580px;
   min-width: 280px;
+  margin: 0 auto;
   height: auto;
   display: block;
+}
+
+/* Download Progress Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.58);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  backdrop-filter: blur(2px);
+}
+
+.download-modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem;
+  box-shadow: 0 20px 35px rgba(15, 23, 42, 0.25);
+  text-align: center;
+}
+
+.download-modal-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.download-modal-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.download-modal-spinner {
+  margin: 0;
+}
+
+.download-done-badge {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #059669;
+  font-size: 1.35rem;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #86efac;
+}
+
+.download-progress-track {
+  width: 100%;
+  height: 12px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 0.65rem;
+}
+
+.download-progress-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 999px;
+  transition: width 0.28s ease;
+}
+
+.download-progress-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  text-align: left;
+  margin-bottom: 1rem;
+}
+
+.download-modal-step {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.download-progress-pct {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: var(--success);
+  flex-shrink: 0;
+}
+
+.download-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
 }
