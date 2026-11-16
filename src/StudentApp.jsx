@@ -74,6 +74,7 @@ export default function StudentApp() {
   const [transform, setTransform] = useState(DEFAULT_TRANSFORM);
   const [bgColor, setBgColor] = useState('#ffffff');
   const [showCropGuide, setShowCropGuide] = useState(false);
+  const [showBrowserWarning, setShowBrowserWarning] = useState(true);
 
   // Export & download progress modal state
   const [exporting, setExporting] = useState(false);
@@ -647,7 +648,56 @@ export default function StudentApp() {
     /FBAN|FBAV|Messenger|Instagram|Line|TikTok/i.test(navigator.userAgent || '');
 
   const browserWarningText =
-    "⚠️ Using Messenger or Facebook? Please tap the ⋯ menu (top-right) and select 'Open in external browser' (Chrome or Safari) so your DP Blast image can download properly.";
+    "Using Messenger or Facebook? Please tap the ⋯ menu (top-right) and select 'Open in external browser' (Chrome or Safari) so your DP Blast image can download properly.";
+
+  const renderBrowserWarning = (inline = false) => {
+    if (!showBrowserWarning) return null;
+    return (
+      <div
+        className={`browser-warning-banner ${isInAppBrowser ? 'browser-warning-urgent' : ''} ${
+          inline ? 'browser-warning-inline' : ''
+        }`}
+        role="note"
+      >
+        <div className="browser-warning-content">
+          <svg
+            className="browser-warning-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span className="browser-warning-text">{browserWarningText}</span>
+        </div>
+        <button
+          type="button"
+          className="browser-warning-close"
+          aria-label="Close browser notice"
+          onClick={() => setShowBrowserWarning(false)}
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    );
+  };
 
   const swatches = [
     { label: 'White', value: '#ffffff' },
@@ -667,12 +717,7 @@ export default function StudentApp() {
         </div>
       </header>
 
-      <div
-        className={`browser-warning-banner ${isInAppBrowser ? 'browser-warning-urgent' : ''}`}
-        role="note"
-      >
-        {browserWarningText}
-      </div>
+      {renderBrowserWarning(false)}
 
       {failOpenNotice && (
         <div className="notice-banner" role="status">
@@ -1000,9 +1045,7 @@ export default function StudentApp() {
                 />
               </div>
 
-              <div className="browser-warning-banner browser-warning-inline" role="note">
-                {browserWarningText}
-              </div>
+              {renderBrowserWarning(true)}
 
               <p className="ios-save-hint">
                 On iPhone/iPad or in-app browsers: tap <strong>Download PNG</strong>,{' '}
@@ -1093,9 +1136,7 @@ export default function StudentApp() {
 
             {downloadModal.done && (
               <div className="download-modal-actions">
-                <div className="browser-warning-banner browser-warning-inline" role="note">
-                  {browserWarningText}
-                </div>
+                {renderBrowserWarning(true)}
                 <a
                   href={downloadModal.url}
                   download={downloadModal.filename}

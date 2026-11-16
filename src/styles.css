@@ -105,9 +105,60 @@ body {
   color: var(--warning-text);
   font-size: 0.84rem;
   font-weight: 600;
-  text-align: center;
-  padding: 0.55rem 1rem;
+  padding: 0.55rem 0.9rem;
   line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.browser-warning-content {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+
+.browser-warning-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: #d97706;
+}
+
+.browser-warning-text {
+  text-align: left;
+}
+
+.browser-warning-close {
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--warning-text);
+  cursor: pointer;
+  width: 30px;
+  height: 30px;
+  padding: 4px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.12s ease;
+}
+
+.browser-warning-close:hover,
+.browser-warning-close:focus-visible {
+  background: rgba(217, 119, 6, 0.16);
+  outline: none;
+}
+
+.browser-warning-close svg {
+  width: 16px;
+  height: 16px;
 }
 
 .browser-warning-urgent {
@@ -120,8 +171,11 @@ body {
   border: 1px solid var(--warning-border);
   border-radius: 8px;
   margin-bottom: 0.75rem;
-  text-align: left;
   font-size: 0.82rem;
+}
+
+.browser-warning-inline .browser-warning-content {
+  justify-content: flex-start;
 }
 
 .alert-error {
