@@ -99,6 +99,31 @@ body {
   padding: 0.5rem 1rem;
 }
 
+.browser-warning-banner {
+  background: var(--warning-bg);
+  border-bottom: 1px solid var(--warning-border);
+  color: var(--warning-text);
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-align: center;
+  padding: 0.55rem 1rem;
+  line-height: 1.4;
+}
+
+.browser-warning-urgent {
+  background: #fef3c7;
+  border-bottom: 2px solid #d97706;
+  color: #78350f;
+}
+
+.browser-warning-inline {
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  text-align: left;
+  font-size: 0.82rem;
+}
+
 .alert-error {
   background: #fef2f2;
   border: 1px solid #fecaca;

@@ -478,7 +478,7 @@ export default function StudentApp() {
     setDownloadModal({
       open: true,
       progress: 25,
-      statusText: `Compositing your photo with the ${OUTPUT_SIZE}×${OUTPUT_SIZE} team frame...`,
+      statusText: 'Compositing your photo with the team frame...',
       done: false,
       filename,
       url,
@@ -489,7 +489,7 @@ export default function StudentApp() {
       setDownloadModal((prev) => ({
         ...prev,
         progress: 65,
-        statusText: `Encoding high-resolution ${OUTPUT_SIZE}×${OUTPUT_SIZE} PNG...`,
+        statusText: 'Encoding high-resolution PNG...',
       }));
     }, 220);
 
@@ -642,6 +642,13 @@ export default function StudentApp() {
     );
   }
 
+  const isInAppBrowser =
+    typeof navigator !== 'undefined' &&
+    /FBAN|FBAV|Messenger|Instagram|Line|TikTok/i.test(navigator.userAgent || '');
+
+  const browserWarningText =
+    "⚠️ Using Messenger or Facebook? Please tap the ⋯ menu (top-right) and select 'Open in external browser' (Chrome or Safari) so your DP Blast image can download properly.";
+
   const swatches = [
     { label: 'White', value: '#ffffff' },
     { label: 'Black', value: '#000000' },
@@ -659,6 +666,13 @@ export default function StudentApp() {
           <p className="subtitle">{BRANDING.subtitle}</p>
         </div>
       </header>
+
+      <div
+        className={`browser-warning-banner ${isInAppBrowser ? 'browser-warning-urgent' : ''}`}
+        role="note"
+      >
+        {browserWarningText}
+      </div>
 
       {failOpenNotice && (
         <div className="notice-banner" role="status">
@@ -811,7 +825,7 @@ export default function StudentApp() {
                       ? 'Loading photo...'
                       : photo
                         ? 'Change Photo'
-                        : 'Upload or Take Photo'}
+                        : 'Upload Photo'}
                   </button>
                 </div>
 
@@ -961,7 +975,7 @@ export default function StudentApp() {
                     disabled={!photo || exporting}
                     onClick={handleExport}
                   >
-                    {exporting ? `Generating ${OUTPUT_SIZE}×${OUTPUT_SIZE} PNG...` : 'Download DP Blast PNG'}
+                    {exporting ? 'Generating PNG...' : 'Download DP Blast PNG'}
                   </button>
                 </div>
               </div>
@@ -975,8 +989,7 @@ export default function StudentApp() {
             <div className="export-card">
               <h2>Your DP Blast is Ready!</h2>
               <p className="export-sub">
-                Full resolution {OUTPUT_SIZE}×{OUTPUT_SIZE} PNG for{' '}
-                <strong>{selectedTeam.name}</strong>
+                Frame for <strong>{selectedTeam.name}</strong>
               </p>
 
               <div className="export-preview-wrap">
@@ -985,6 +998,10 @@ export default function StudentApp() {
                   alt="Finished DP Blast preview"
                   className="export-preview-img"
                 />
+              </div>
+
+              <div className="browser-warning-banner browser-warning-inline" role="note">
+                {browserWarningText}
               </div>
 
               <p className="ios-save-hint">
@@ -1076,6 +1093,9 @@ export default function StudentApp() {
 
             {downloadModal.done && (
               <div className="download-modal-actions">
+                <div className="browser-warning-banner browser-warning-inline" role="note">
+                  {browserWarningText}
+                </div>
                 <a
                   href={downloadModal.url}
                   download={downloadModal.filename}
