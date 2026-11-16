@@ -635,6 +635,8 @@ export default function StudentApp() {
         </main>
         <footer className="app-footer">
           <p>{BRANDING.privacyNote}</p>
+          <p className="footer-credit">{BRANDING.creditLine}</p>
+          <p className="footer-sub">{BRANDING.footerText}</p>
         </footer>
       </div>
     );
@@ -652,6 +654,7 @@ export default function StudentApp() {
     <div className="app-shell">
       <header className="app-header">
         <div className="header-inner">
+          <div className="org-badge">An Initiative by {BRANDING.organization}</div>
           <h1>{BRANDING.title}</h1>
           <p className="subtitle">{BRANDING.subtitle}</p>
         </div>
@@ -1104,6 +1107,7 @@ export default function StudentApp() {
 
       <footer className="app-footer">
         <p>{BRANDING.privacyNote}</p>
+        <p className="footer-credit">{BRANDING.creditLine}</p>
         <p className="footer-sub">{BRANDING.footerText}</p>
       </footer>
     </div>

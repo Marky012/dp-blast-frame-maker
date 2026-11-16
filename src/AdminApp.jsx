@@ -373,6 +373,7 @@ export default function AdminApp() {
       <div className="app-shell">
         <header className="app-header">
           <div className="header-inner">
+            <div className="org-badge">{BRANDING.creditLine}</div>
             <h1>{BRANDING.title} — Admin</h1>
             <p className="subtitle">Sign in to manage teams and {OUTPUT_SIZE}×{OUTPUT_SIZE} PNG frames</p>
           </div>
@@ -422,6 +423,7 @@ export default function AdminApp() {
       <header className="app-header admin-header">
         <div className="header-inner admin-header-inner">
           <div>
+            <div className="org-badge">{BRANDING.creditLine}</div>
             <h1>{BRANDING.title} — Admin</h1>
             <p className="subtitle">Manage dynamic teams &amp; {OUTPUT_SIZE}×{OUTPUT_SIZE} transparent frames</p>
           </div>
@@ -1025,6 +1027,11 @@ export default function AdminApp() {
           </>
         )}
       </main>
+
+      <footer className="app-footer">
+        <p className="footer-credit">{BRANDING.creditLine}</p>
+        <p className="footer-sub">{BRANDING.footerText}</p>
+      </footer>
     </div>
   );
 }

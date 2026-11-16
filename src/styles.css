@@ -919,9 +919,27 @@ body {
   margin: 0.15rem 0;
 }
 
+.footer-credit {
+  font-weight: 700;
+  color: var(--text);
+}
+
 .footer-sub {
   font-size: 0.75rem;
   opacity: 0.85;
+}
+
+.org-badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  padding: 0.18rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
 }
 
 
