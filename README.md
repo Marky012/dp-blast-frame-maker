@@ -181,7 +181,7 @@ Edit [`src/config.js`](./src/config.js):
    ```
    Optional flags via environment variables:
    - `TEST_BASE_URL` (defaults to `http://localhost:8888`)
-   - `ADMIN_PASSWORD` (defaults to `TempAdminPass2026!`)
+   - `ADMIN_PASSWORD`
    - `TEST_SKIP_TTL=1` (skips waiting for full `SESSION_TTL_SECONDS`)
    - `TEST_SKIP_PER_IP=1` (skips per-IP check when `MAX_PER_IP > MAX_CONCURRENT`)
 
