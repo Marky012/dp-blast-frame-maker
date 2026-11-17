@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { OUTPUT_SIZE, BRANDING } from './config.js';
+import { OUTPUT_SIZE, BRANDING, STARTUP_NOTICE } from './config.js';
 import {
   loadStudentPhoto,
   renderComposite,
@@ -75,6 +75,7 @@ export default function StudentApp() {
   const [bgColor, setBgColor] = useState('#ffffff');
   const [showCropGuide, setShowCropGuide] = useState(false);
   const [showBrowserWarning, setShowBrowserWarning] = useState(true);
+  const [showStartupModal, setShowStartupModal] = useState(true);
 
   // Export & download progress modal state
   const [exporting, setExporting] = useState(false);
@@ -606,6 +607,67 @@ export default function StudentApp() {
     );
   }
 
+  const renderStartupModal = () => {
+    if (!showStartupModal) return null;
+    return (
+      <div
+        className="modal-backdrop"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="startup-modal-title"
+      >
+        <div className="startup-modal-card">
+          <div className="startup-modal-header">
+            <div className="startup-modal-badge">
+              An Initiative by {BRANDING.organization}
+            </div>
+            <h2 id="startup-modal-title">{STARTUP_NOTICE.title}</h2>
+            <p className="startup-modal-subtitle">{STARTUP_NOTICE.subtitle}</p>
+          </div>
+
+          <ul className="startup-notice-list">
+            {STARTUP_NOTICE.items.map((item) => (
+              <li key={item.id} className="startup-notice-item">
+                <span className="startup-notice-icon" aria-hidden="true">
+                  ✓
+                </span>
+                <div className="startup-notice-body">
+                  <strong>{item.heading}</strong>
+                  <p>{item.description}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <button
+            type="button"
+            className="btn btn-primary btn-block btn-lg"
+            onClick={() => setShowStartupModal(false)}
+          >
+            {STARTUP_NOTICE.confirmText}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderFooter = () => (
+    <footer className="app-footer">
+      <p>{BRANDING.privacyNote}</p>
+      <p className="footer-credit">{BRANDING.creditLine}</p>
+      <p className="footer-sub">{BRANDING.footerText}</p>
+      <p className="footer-notice-wrap">
+        <button
+          type="button"
+          className="footer-link-btn"
+          onClick={() => setShowStartupModal(true)}
+        >
+          View Community, Privacy &amp; IP Notice
+        </button>
+      </p>
+    </footer>
+  );
+
   if (gateState === 'full' || gateState === 'rate_limited') {
     return (
       <div className="app-shell">
@@ -634,11 +696,8 @@ export default function StudentApp() {
             </button>
           </div>
         </main>
-        <footer className="app-footer">
-          <p>{BRANDING.privacyNote}</p>
-          <p className="footer-credit">{BRANDING.creditLine}</p>
-          <p className="footer-sub">{BRANDING.footerText}</p>
-        </footer>
+        {renderStartupModal()}
+        {renderFooter()}
       </div>
     );
   }
@@ -1166,11 +1225,9 @@ export default function StudentApp() {
         </div>
       )}
 
-      <footer className="app-footer">
-        <p>{BRANDING.privacyNote}</p>
-        <p className="footer-credit">{BRANDING.creditLine}</p>
-        <p className="footer-sub">{BRANDING.footerText}</p>
-      </footer>
+      {renderStartupModal()}
+
+      {renderFooter()}
     </div>
   );
 }

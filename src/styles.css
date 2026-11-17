@@ -1399,3 +1399,122 @@ body {
   flex-direction: column;
   gap: 0.55rem;
 }
+
+/* Startup Community & Privacy Modal */
+.startup-modal-card {
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem;
+  box-shadow: 0 20px 35px rgba(15, 23, 42, 0.25);
+  text-align: left;
+}
+
+.startup-modal-header {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.startup-modal-badge {
+  display: inline-block;
+  margin-bottom: 0.45rem;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #1e40af;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+}
+
+.startup-modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.startup-modal-subtitle {
+  margin: 0.3rem 0 0;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.startup-notice-list {
+  list-style: none;
+  margin: 0 0 1.15rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.startup-notice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+}
+
+.startup-notice-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: var(--primary);
+  font-size: 0.82rem;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
+.startup-notice-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.startup-notice-body strong {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+
+.startup-notice-body p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.footer-notice-wrap {
+  margin-top: 0.35rem !important;
+}
+
+.footer-link-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.footer-link-btn:hover,
+.footer-link-btn:focus-visible {
+  color: var(--primary-hover);
+  outline: none;
+}
