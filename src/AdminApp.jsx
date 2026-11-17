@@ -1029,7 +1029,7 @@ export default function AdminApp() {
       </main>
 
       <footer className="app-footer">
-        <p className="footer-credit">{BRANDING.creditLine}</p>
+        <p className="footer-credit">{BRANDING.footerCreditLine}</p>
         <p className="footer-sub">{BRANDING.footerText}</p>
       </footer>
     </div>

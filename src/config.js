@@ -5,6 +5,7 @@ export const BRANDING = {
   subtitle: 'Select your team, upload your photo, adjust the fit, and download your DP blast!',
   organization: "Sentinels' Guild",
   creditLine: "Developed & initialized by Sentinels' Guild",
+  footerCreditLine: "Developed & initialized by Sentinels' Guild Officers",
   privacyNote: 'Your photo stays on your device — photos are never uploaded or stored anywhere.',
   footerText: "© 2026 Sentinels' Guild. All rights reserved.",
 };

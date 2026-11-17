@@ -653,8 +653,7 @@ export default function StudentApp() {
 
   const renderFooter = () => (
     <footer className="app-footer">
-      <p>{BRANDING.privacyNote}</p>
-      <p className="footer-credit">{BRANDING.creditLine}</p>
+      <p className="footer-credit">{BRANDING.footerCreditLine}</p>
       <p className="footer-sub">{BRANDING.footerText}</p>
       <p className="footer-notice-wrap">
         <button
