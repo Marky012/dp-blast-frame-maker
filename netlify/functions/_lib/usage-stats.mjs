@@ -220,6 +220,54 @@ export async function recordTeamParticipation({ teamId }) {
 }
 
 /**
+ * Allows an admin to explicitly set/adjust a team's total participation count.
+ * Future student downloads will continue incrementing (+1) from this value.
+ */
+export async function setTeamParticipationCount({ teamId, count }) {
+  if (!teamId || typeof teamId !== 'string') return;
+  const cleanCount = Math.max(0, Math.floor(Number(count) || 0));
+
+  const store = getUsageStore();
+  const { dateKey } = getTimeInfo();
+
+  const [, dayRes] = await Promise.all([
+    mutateJsonBlob(
+      store,
+      TEAM_TOTALS_KEY,
+      () => ({ counts: {}, updatedAt: null }),
+      (totals) => {
+        if (!totals.counts || typeof totals.counts !== 'object') {
+          totals.counts = {};
+        }
+        totals.counts[teamId] = cleanCount;
+        totals.updatedAt = new Date().toISOString();
+      }
+    ),
+    mutateJsonBlob(
+      store,
+      dateKey,
+      () => createEmptyDay(dateKey),
+      (dayData) => {
+        if (!dayData.teamDownloads || typeof dayData.teamDownloads !== 'object') {
+          dayData.teamDownloads = {};
+        }
+        if ((Number(dayData.teamDownloads[teamId]) || 0) > cleanCount) {
+          dayData.teamDownloads[teamId] = cleanCount;
+          dayData.totalDownloads = Object.values(dayData.teamDownloads).reduce(
+            (sum, val) => sum + (Number(val) || 0),
+            0
+          );
+        }
+      }
+    ),
+  ]);
+
+  if (dayRes?.isNew) {
+    await pruneOldDays(store, dateKey);
+  }
+}
+
+/**
  * Aggregates usage counters across the last `days` (1, 7, or 30) in TIMEZONE.
  */
 export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurrent = 50, teams = [] }) {
@@ -293,8 +341,10 @@ export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurren
         periodDownloads += Number(day.teamDownloads[team.id]) || 0;
       }
     }
-    const rawTotal = Number(totalsCounts[team.id]) || 0;
-    const totalDownloads = Math.max(rawTotal, periodDownloads);
+    const hasExplicitTotal = Object.prototype.hasOwnProperty.call(totalsCounts, team.id);
+    const totalDownloads = hasExplicitTotal
+      ? Math.max(0, Number(totalsCounts[team.id]) || 0)
+      : periodDownloads;
 
     return {
       id: team.id,

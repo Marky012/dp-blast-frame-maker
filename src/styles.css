@@ -1612,12 +1612,19 @@ body {
 
 .leaderboard-row {
   display: flex;
-  align-items: center;
-  gap: 0.85rem;
+  flex-direction: column;
+  gap: 0.65rem;
   padding: 0.75rem 0.9rem;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: #f8fafc;
+}
+
+.leaderboard-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
 }
 
 .leaderboard-row-leader {
@@ -1694,4 +1701,51 @@ body {
   height: 100%;
   border-radius: 999px;
   transition: width 0.25s ease;
+}
+
+.leaderboard-adjust-btn {
+  flex-shrink: 0;
+}
+
+.leaderboard-adjust-bar,
+.admin-adjust-count-bar {
+  margin-top: 0.25rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.admin-adjust-count-bar {
+  margin-top: 0.75rem;
+}
+
+.adjust-count-label {
+  font-size: 0.88rem;
+  color: #1e3a8a;
+}
+
+.adjust-count-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.adjust-count-input {
+  width: 96px;
+  min-height: 36px;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  text-align: center;
+  background: #ffffff;
+  color: var(--text);
 }

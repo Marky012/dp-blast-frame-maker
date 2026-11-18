@@ -43,11 +43,17 @@ export default function AdminApp() {
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState('');
 
+  // Manual participation count adjustment state
+  const [adjustingTeamId, setAdjustingTeamId] = useState(null);
+  const [adjustCountValue, setAdjustCountValue] = useState('');
+  const [savingCountTeamId, setSavingCountTeamId] = useState(null);
+
   const handleLogout = useCallback(() => {
     sessionStorage.removeItem(TOKEN_STORAGE_KEY);
     setToken('');
     setPassword('');
     setEditingTeamId(null);
+    setAdjustingTeamId(null);
     setStats(null);
   }, []);
 
@@ -371,6 +377,114 @@ export default function AdminApp() {
     }
   };
 
+  const startAdjustingCount = (team, currentCount) => {
+    setAdjustingTeamId(team.id);
+    setAdjustCountValue(String(Math.max(0, Number(currentCount) || 0)));
+    setGlobalError('');
+    setGlobalSuccess('');
+  };
+
+  const handleSaveTeamCount = async (e, team) => {
+    e.preventDefault();
+    const trimmed = String(adjustCountValue).trim();
+    const parsed = Number(trimmed);
+    if (trimmed === '' || !Number.isInteger(parsed) || parsed < 0 || parsed > 1000000) {
+      setGlobalError('Participation count must be a whole number between 0 and 1,000,000.');
+      return;
+    }
+
+    setSavingCountTeamId(team.id);
+    setGlobalError('');
+    setGlobalSuccess('');
+    try {
+      const res = await fetch('/api/admin/stats', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          teamId: team.id,
+          count: parsed,
+          days: statsDays,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to update participation count.');
+      }
+
+      setStats(data);
+      setAdjustingTeamId(null);
+      setGlobalSuccess(`Updated participation count for "${team.name}" to ${parsed}.`);
+    } catch (err) {
+      setGlobalError(err.message || 'Failed to update participation count.');
+    } finally {
+      setSavingCountTeamId(null);
+    }
+  };
+
+  const renderAdjustCountForm = (team, barClassName) => {
+    const currentParsed = parseInt(adjustCountValue, 10);
+    const stepValue = Number.isFinite(currentParsed) ? currentParsed : 0;
+    const isSaving = savingCountTeamId === team.id;
+
+    return (
+      <form className={barClassName} onSubmit={(e) => handleSaveTeamCount(e, team)}>
+        <label htmlFor={`adjust-count-${team.id}`} className="adjust-count-label">
+          Set participation count for <strong>{team.name}</strong>:
+        </label>
+        <div className="adjust-count-controls">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={isSaving || stepValue <= 0}
+            aria-label="Decrease count by 1"
+            onClick={() => setAdjustCountValue(String(Math.max(0, stepValue - 1)))}
+          >
+            −1
+          </button>
+          <input
+            id={`adjust-count-${team.id}`}
+            type="number"
+            min="0"
+            max="1000000"
+            step="1"
+            className="adjust-count-input"
+            value={adjustCountValue}
+            onChange={(e) => setAdjustCountValue(e.target.value)}
+            disabled={isSaving}
+            required
+          />
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={isSaving || stepValue >= 1000000}
+            aria-label="Increase count by 1"
+            onClick={() => setAdjustCountValue(String(Math.min(1000000, stepValue + 1)))}
+          >
+            +1
+          </button>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save Count'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={isSaving}
+            onClick={() => setAdjustingTeamId(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      </form>
+    );
+  };
+
   // --- Login View ---
   if (!token) {
     return (
@@ -673,41 +787,56 @@ export default function AdminApp() {
                               item.isLeader ? 'leaderboard-row-leader' : ''
                             }`}
                           >
-                            <div className="leaderboard-rank">
-                              #{item.rank}
-                              {item.isLeader ? ' 🏆' : ''}
-                            </div>
-                            <div className="leaderboard-team-info">
-                              <div className="leaderboard-team-top">
-                                <div className="leaderboard-team-name-wrap">
-                                  <span
-                                    className="team-color-dot"
-                                    style={{ backgroundColor: item.accentColor }}
+                            <div className="leaderboard-row-main">
+                              <div className="leaderboard-rank">
+                                #{item.rank}
+                                {item.isLeader ? ' 🏆' : ''}
+                              </div>
+                              <div className="leaderboard-team-info">
+                                <div className="leaderboard-team-top">
+                                  <div className="leaderboard-team-name-wrap">
+                                    <span
+                                      className="team-color-dot"
+                                      style={{ backgroundColor: item.accentColor }}
+                                    />
+                                    <strong>{item.name}</strong>
+                                    {item.isLeader && (
+                                      <span className="leaderboard-leader-tag">Leading</span>
+                                    )}
+                                  </div>
+                                  <div className="leaderboard-metrics">
+                                    <strong>{item.totalDownloads}</strong>{' '}
+                                    {item.totalDownloads === 1 ? 'download' : 'downloads'} ({item.sharePct}%)
+                                    <span className="leaderboard-today">
+                                      {' '}
+                                      • +{item.todayDownloads} today
+                                    </span>
+                                  </div>
+                                </div>
+                                <div className="leaderboard-bar-track" aria-hidden="true">
+                                  <div
+                                    className="leaderboard-bar-fill"
+                                    style={{
+                                      width: `${barPct}%`,
+                                      backgroundColor: item.accentColor,
+                                    }}
                                   />
-                                  <strong>{item.name}</strong>
-                                  {item.isLeader && (
-                                    <span className="leaderboard-leader-tag">Leading</span>
-                                  )}
-                                </div>
-                                <div className="leaderboard-metrics">
-                                  <strong>{item.totalDownloads}</strong>{' '}
-                                  {item.totalDownloads === 1 ? 'download' : 'downloads'} ({item.sharePct}%)
-                                  <span className="leaderboard-today">
-                                    {' '}
-                                    • +{item.todayDownloads} today
-                                  </span>
                                 </div>
                               </div>
-                              <div className="leaderboard-bar-track" aria-hidden="true">
-                                <div
-                                  className="leaderboard-bar-fill"
-                                  style={{
-                                    width: `${barPct}%`,
-                                    backgroundColor: item.accentColor,
-                                  }}
-                                />
-                              </div>
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm leaderboard-adjust-btn"
+                                onClick={() =>
+                                  adjustingTeamId === item.id
+                                    ? setAdjustingTeamId(null)
+                                    : startAdjustingCount(item, item.totalDownloads)
+                                }
+                              >
+                                {adjustingTeamId === item.id ? 'Close' : 'Adjust Count'}
+                              </button>
                             </div>
+                            {adjustingTeamId === item.id &&
+                              renderAdjustCountForm(item, 'leaderboard-adjust-bar')}
                           </div>
                         );
                       })}
@@ -1026,6 +1155,21 @@ export default function AdminApp() {
                         <button
                           type="button"
                           className="btn btn-secondary btn-sm"
+                          onClick={() =>
+                            adjustingTeamId === team.id
+                              ? setAdjustingTeamId(null)
+                              : startAdjustingCount(
+                                  team,
+                                  participationMap.get(team.id)?.totalDownloads ?? 0
+                                )
+                          }
+                        >
+                          {adjustingTeamId === team.id ? 'Cancel Count' : 'Adjust Count'}
+                        </button>
+
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
                           onClick={() => (isEditing ? setEditingTeamId(null) : startEditing(team))}
                         >
                           {isEditing ? 'Cancel Edit' : 'Edit'}
@@ -1041,6 +1185,10 @@ export default function AdminApp() {
                         </button>
                       </div>
                     </div>
+
+                    {/* INLINE ADJUST COUNT */}
+                    {adjustingTeamId === team.id &&
+                      renderAdjustCountForm(team, 'admin-adjust-count-bar')}
 
                     {/* INLINE CONFIRM DELETE */}
                     {isConfirmingDelete && (
