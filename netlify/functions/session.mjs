@@ -1,7 +1,8 @@
 import crypto from 'node:crypto';
 import { getStore } from '@netlify/blobs';
 import { getEnv, getClientIp } from './_lib/env.mjs';
-import { recordSessionStartEvent } from './_lib/usage-stats.mjs';
+import { recordSessionStartEvent, recordTeamParticipation } from './_lib/usage-stats.mjs';
+import { getTeamsList } from './_lib/teams-store.mjs';
 
 const GATEKEEPER_STORE = 'dp-blast-gatekeeper';
 const STATE_KEY = 'gatekeeper-state';
@@ -298,6 +299,23 @@ export default async (req, context) => {
           };
         });
         return mutated.response;
+      }
+
+      if (action === 'participate') {
+        const rawTeamId = body?.teamId;
+        const teamId = typeof rawTeamId === 'string' ? rawTeamId.trim() : '';
+        if (!teamId || teamId.length > 64) {
+          return Response.json({ error: 'Valid teamId is required.' }, { status: 400 });
+        }
+
+        const teams = await getTeamsList();
+        const exists = teams.some((t) => t.id === teamId);
+        if (!exists) {
+          return Response.json({ error: 'Team not found.' }, { status: 404 });
+        }
+
+        await recordTeamParticipation({ teamId });
+        return Response.json({ status: 'ok', teamId });
       }
 
       return Response.json({ error: 'Unknown session action' }, { status: 404 });

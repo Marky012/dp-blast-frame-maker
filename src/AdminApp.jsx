@@ -214,6 +214,7 @@ export default function AdminApp() {
       const fileInput = document.getElementById('new-team-frame-input');
       if (fileInput) fileInput.value = '';
       setGlobalSuccess(`Added "${data.team?.name || 'Team'}"!`);
+      fetchStats(statsDays);
     } catch (err) {
       setGlobalError(err.message || 'Failed to add team.');
     } finally {
@@ -289,6 +290,7 @@ export default function AdminApp() {
       setTeams(data.teams || []);
       setEditingTeamId(null);
       setGlobalSuccess(`Updated "${data.team?.name || 'team'}"!`);
+      fetchStats(statsDays);
     } catch (err) {
       setGlobalError(err.message || 'Failed to update team.');
     } finally {
@@ -319,6 +321,7 @@ export default function AdminApp() {
       setConfirmDeleteTeam(null);
       if (editingTeamId === team.id) setEditingTeamId(null);
       setGlobalSuccess(`Deleted "${team.name}".`);
+      fetchStats(statsDays);
     } catch (err) {
       setGlobalError(err.message || 'Failed to delete team.');
     } finally {
@@ -359,6 +362,7 @@ export default function AdminApp() {
         throw new Error(data.error || 'Failed to reorder teams.');
       }
       setTeams(data.teams || updated);
+      fetchStats(statsDays);
     } catch (err) {
       setGlobalError(err.message || 'Failed to reorder teams.');
       fetchTeams();
@@ -418,6 +422,13 @@ export default function AdminApp() {
   }
 
   // --- Authenticated Admin Dashboard ---
+  const teamParticipation = Array.isArray(stats?.teamParticipation) ? stats.teamParticipation : [];
+  const participationMap = new Map(teamParticipation.map((t) => [t.id, t]));
+  const totalDownloadsAllTeams = stats?.totalDownloadsAllTeams ?? 0;
+  const todayDownloadsAllTeams = stats?.todayDownloadsAllTeams ?? 0;
+  const leaders = teamParticipation.filter((t) => t.isLeader);
+  const leaderLabel = leaders.map((l) => l.name).join(' & ');
+
   return (
     <div className="app-shell">
       <header className="app-header admin-header">
@@ -481,20 +492,30 @@ export default function AdminApp() {
         {activeTab === 'teams' && stats && (
           <div className="admin-live-banner">
             <div className="admin-live-banner-info">
-              <strong>Live Concurrent Users:</strong>{' '}
-              <span className="live-count-inline">
-                {stats.activeNow} / {stats.maxConcurrent}
+              <span>
+                <strong>Live Concurrent Users:</strong>{' '}
+                <span className="live-count-inline">
+                  {stats.activeNow} / {stats.maxConcurrent}
+                </span>
               </span>
               {stats.activeNow >= stats.maxConcurrent && (
                 <span className="live-full-tag">FULL, students are being queued</span>
               )}
+              <span className="banner-sep" aria-hidden="true">•</span>
+              <span>
+                <strong>Total DP Blasts Downloaded:</strong>{' '}
+                <span className="live-count-inline">{totalDownloadsAllTeams}</span>
+                {leaderLabel && (
+                  <span className="banner-leader-note"> (Leading: {leaderLabel})</span>
+                )}
+              </span>
             </div>
             <button
               type="button"
               className="btn btn-secondary btn-sm"
               onClick={() => setActiveTab('monitor')}
             >
-              Open Monitor →
+              Open Monitor &amp; Leaderboard →
             </button>
           </div>
         )}
@@ -592,8 +613,13 @@ export default function AdminApp() {
                 )}
               </div>
 
-              {/* 3 Stat Cards */}
+              {/* 4 Stat Cards */}
               <div className="monitor-stats-grid">
+                <div className="admin-card monitor-stat-card monitor-stat-participation">
+                  <div className="stat-label">Total DP Blasts Downloaded</div>
+                  <div className="stat-value">{totalDownloadsAllTeams}</div>
+                  <div className="stat-sub">+{todayDownloadsAllTeams} today</div>
+                </div>
                 <div className="admin-card monitor-stat-card">
                   <div className="stat-label">Peak today</div>
                   <div className="stat-value">{stats?.peakToday ?? 0}</div>
@@ -606,6 +632,88 @@ export default function AdminApp() {
                   <div className="stat-label">Students blocked today (per-IP)</div>
                   <div className="stat-value">{stats?.rejectedIpToday ?? 0}</div>
                 </div>
+              </div>
+
+              {/* Team Participation Leaderboard */}
+              <div className="admin-card participation-leaderboard-card">
+                <div className="leaderboard-header">
+                  <div>
+                    <div className="leaderboard-title-row">
+                      <h2>Team Participation Leaderboard</h2>
+                      <span className="leaderboard-basis-badge">Most Cooperative Team Basis</span>
+                    </div>
+                    <p className="leaderboard-subtitle">
+                      Number of students per team who successfully created and downloaded their DP blast.
+                    </p>
+                  </div>
+                  <div className="leaderboard-summary-pills">
+                    <span className="version-pill">Total: {totalDownloadsAllTeams}</span>
+                    <span className="version-pill">Today: +{todayDownloadsAllTeams}</span>
+                  </div>
+                </div>
+
+                {teamParticipation.length === 0 ? (
+                  <p className="empty-text">No teams available yet.</p>
+                ) : (() => {
+                  const maxTeamDownloads = Math.max(
+                    1,
+                    ...teamParticipation.map((t) => t.totalDownloads)
+                  );
+                  return (
+                    <div className="leaderboard-list">
+                      {teamParticipation.map((item) => {
+                        const barPct =
+                          item.totalDownloads > 0
+                            ? Math.max(4, Math.round((item.totalDownloads / maxTeamDownloads) * 100))
+                            : 0;
+                        return (
+                          <div
+                            key={item.id}
+                            className={`leaderboard-row ${
+                              item.isLeader ? 'leaderboard-row-leader' : ''
+                            }`}
+                          >
+                            <div className="leaderboard-rank">
+                              #{item.rank}
+                              {item.isLeader ? ' 🏆' : ''}
+                            </div>
+                            <div className="leaderboard-team-info">
+                              <div className="leaderboard-team-top">
+                                <div className="leaderboard-team-name-wrap">
+                                  <span
+                                    className="team-color-dot"
+                                    style={{ backgroundColor: item.accentColor }}
+                                  />
+                                  <strong>{item.name}</strong>
+                                  {item.isLeader && (
+                                    <span className="leaderboard-leader-tag">Leading</span>
+                                  )}
+                                </div>
+                                <div className="leaderboard-metrics">
+                                  <strong>{item.totalDownloads}</strong>{' '}
+                                  {item.totalDownloads === 1 ? 'download' : 'downloads'} ({item.sharePct}%)
+                                  <span className="leaderboard-today">
+                                    {' '}
+                                    • +{item.todayDownloads} today
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="leaderboard-bar-track" aria-hidden="true">
+                                <div
+                                  className="leaderboard-bar-fill"
+                                  style={{
+                                    width: `${barPct}%`,
+                                    backgroundColor: item.accentColor,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* 4-Quarter Histogram */}
@@ -839,7 +947,14 @@ export default function AdminApp() {
         <section className="admin-card" aria-label="Manage existing teams">
           <div className="section-header">
             <h2>Teams ({teams.length})</h2>
-            <button type="button" className="btn btn-secondary btn-sm" onClick={fetchTeams}>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                fetchTeams();
+                fetchStats(statsDays);
+              }}
+            >
               Refresh
             </button>
           </div>
@@ -875,6 +990,9 @@ export default function AdminApp() {
                           />
                           <strong className="admin-team-name">{team.name}</strong>
                           <span className="version-pill">v{team.frameVersion || 1}</span>
+                          <span className="team-download-pill">
+                            📥 {participationMap.get(team.id)?.totalDownloads ?? 0} downloaded
+                          </span>
                         </div>
                         <div className="admin-team-meta">
                           ID: <code>{team.id}</code> • Accent: <code>{team.accentColor}</code>

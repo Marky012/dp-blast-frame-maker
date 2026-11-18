@@ -94,6 +94,8 @@ export default function StudentApp() {
   const canvasRef = useRef(null);
   const fileInputRef = useRef(null);
   const rafRef = useRef(null);
+  const recordedParticipationsRef = useRef(new Set());
+  const photoIdRef = useRef(0);
 
   // Gesture tracking refs for smooth pointer/touch interaction
   const pointersRef = useRef(new Map());
@@ -441,6 +443,7 @@ export default function StudentApp() {
     setPhotoError('');
     try {
       const loaded = await loadStudentPhoto(file);
+      photoIdRef.current += 1;
       setPhoto((prev) => {
         if (prev?.drawable && typeof prev.drawable.close === 'function') {
           prev.drawable.close();
@@ -551,6 +554,21 @@ export default function StudentApp() {
 
       // Trigger download synchronously within the tap gesture for mobile browser compatibility
       triggerBrowserDownload(url, filename);
+
+      // Record successful team participation once per team + uploaded photo (non-blocking)
+      const dedupeKey = `${selectedTeam.id}:${photoIdRef.current}`;
+      if (!recordedParticipationsRef.current.has(dedupeKey)) {
+        recordedParticipationsRef.current.add(dedupeKey);
+        fetch('/api/session/participate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            teamId: selectedTeam.id,
+            sessionId: sessionIdRef.current,
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
 
       setExportResult({ blob, url, dataUrl, filename, canShare });
       startDownloadModalProgress({ url, filename, canShare });

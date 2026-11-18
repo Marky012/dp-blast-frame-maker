@@ -2,6 +2,7 @@ import { getStore } from '@netlify/blobs';
 import { getEnv } from './env.mjs';
 
 const USAGE_STORE_NAME = 'dp-blast-usage-stats';
+const TEAM_TOTALS_KEY = 'team-participation-totals';
 const DEFAULT_TIMEZONE = 'Asia/Manila';
 const RETENTION_DAYS = 30;
 
@@ -82,6 +83,8 @@ function createEmptyDay(dateKey) {
     peakConcurrent: 0,
     rejectedFull: 0,
     rejectedIp: 0,
+    totalDownloads: 0,
+    teamDownloads: {},
     quarters: {
       Q1: createEmptyQuarter(),
       Q2: createEmptyQuarter(),
@@ -89,6 +92,31 @@ function createEmptyDay(dateKey) {
       Q4: createEmptyQuarter(),
     },
   };
+}
+
+async function mutateJsonBlob(store, key, createDefault, mutator) {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const entry = await store.getWithMetadata(key, { type: 'json', consistency: 'strong' });
+    const isNew = !entry || !entry.data || typeof entry.data !== 'object';
+    const data = isNew ? createDefault() : entry.data;
+    const etag = entry ? entry.etag : null;
+
+    mutator(data);
+
+    const writeOpts = etag ? { onlyIfMatch: etag } : { onlyIfNew: true };
+    const writeRes = await store.setJSON(key, data, writeOpts);
+    if (!writeRes || writeRes.modified !== false) {
+      return { isNew, data };
+    }
+    await new Promise((r) => setTimeout(r, 15 + Math.floor(Math.random() * 25)));
+  }
+
+  const current = await store.get(key, { type: 'json', consistency: 'strong' });
+  const isNew = !current || typeof current !== 'object';
+  const fallback = isNew ? createDefault() : current;
+  mutator(fallback);
+  await store.setJSON(key, fallback);
+  return { isNew, data: fallback };
 }
 
 async function pruneOldDays(store, todayDateKey) {
@@ -150,9 +178,51 @@ export async function recordSessionStartEvent({ outcome, activeCount = 0 }) {
 }
 
 /**
+ * Records a successful student DP Blast export & download for a given teamId.
+ * Persists both all-time per-team totals and daily per-team counts. Stores zero PII.
+ */
+export async function recordTeamParticipation({ teamId }) {
+  if (!teamId || typeof teamId !== 'string') return;
+
+  const store = getUsageStore();
+  const { dateKey } = getTimeInfo();
+
+  const [, dayRes] = await Promise.all([
+    mutateJsonBlob(
+      store,
+      TEAM_TOTALS_KEY,
+      () => ({ counts: {}, updatedAt: null }),
+      (totals) => {
+        if (!totals.counts || typeof totals.counts !== 'object') {
+          totals.counts = {};
+        }
+        totals.counts[teamId] = (Number(totals.counts[teamId]) || 0) + 1;
+        totals.updatedAt = new Date().toISOString();
+      }
+    ),
+    mutateJsonBlob(
+      store,
+      dateKey,
+      () => createEmptyDay(dateKey),
+      (dayData) => {
+        if (!dayData.teamDownloads || typeof dayData.teamDownloads !== 'object') {
+          dayData.teamDownloads = {};
+        }
+        dayData.teamDownloads[teamId] = (Number(dayData.teamDownloads[teamId]) || 0) + 1;
+        dayData.totalDownloads = (Number(dayData.totalDownloads) || 0) + 1;
+      }
+    ),
+  ]);
+
+  if (dayRes?.isNew) {
+    await pruneOldDays(store, dateKey);
+  }
+}
+
+/**
  * Aggregates usage counters across the last `days` (1, 7, or 30) in TIMEZONE.
  */
-export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurrent = 50 }) {
+export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurrent = 50, teams = [] }) {
   const store = getUsageStore();
   const { timezone, dateKey: todayKey, quarterKey: currentQuarter } = getTimeInfo();
 
@@ -162,9 +232,10 @@ export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurren
     dateKeys.push(shiftDateKey(todayKey, -i));
   }
 
-  const dayBlobs = await Promise.all(
-    dateKeys.map((k) => store.get(k, { type: 'json', consistency: 'strong' }).catch(() => null))
-  );
+  const [totalsBlob, ...dayBlobs] = await Promise.all([
+    store.get(TEAM_TOTALS_KEY, { type: 'json', consistency: 'strong' }).catch(() => null),
+    ...dateKeys.map((k) => store.get(k, { type: 'json', consistency: 'strong' }).catch(() => null)),
+  ]);
 
   const todayBlob = dayBlobs[0] || createEmptyDay(todayKey);
   const peakToday = Math.max(todayBlob.peakConcurrent || 0, activeNow);
@@ -202,6 +273,60 @@ export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurren
     activeNow
   );
 
+  // Per-team participation metrics
+  const totalsCounts =
+    totalsBlob && totalsBlob.counts && typeof totalsBlob.counts === 'object'
+      ? totalsBlob.counts
+      : {};
+  const todayTeamMap =
+    todayBlob.teamDownloads && typeof todayBlob.teamDownloads === 'object'
+      ? todayBlob.teamDownloads
+      : {};
+
+  const safeTeams = Array.isArray(teams) ? teams : [];
+  const rawTeamStats = safeTeams.map((team) => {
+    const todayDownloads = Number(todayTeamMap[team.id]) || 0;
+    let periodDownloads = 0;
+    for (let idx = 0; idx < dayBlobs.length; idx++) {
+      const day = dayBlobs[idx];
+      if (day?.teamDownloads && typeof day.teamDownloads === 'object') {
+        periodDownloads += Number(day.teamDownloads[team.id]) || 0;
+      }
+    }
+    const rawTotal = Number(totalsCounts[team.id]) || 0;
+    const totalDownloads = Math.max(rawTotal, periodDownloads);
+
+    return {
+      id: team.id,
+      name: team.name,
+      accentColor: team.accentColor || '#2563eb',
+      order: team.order ?? 0,
+      totalDownloads,
+      todayDownloads,
+      periodDownloads,
+    };
+  });
+
+  rawTeamStats.sort((a, b) => {
+    if (b.totalDownloads !== a.totalDownloads) return b.totalDownloads - a.totalDownloads;
+    if (b.todayDownloads !== a.todayDownloads) return b.todayDownloads - a.todayDownloads;
+    return a.order - b.order;
+  });
+
+  const totalDownloadsAllTeams = rawTeamStats.reduce((sum, t) => sum + t.totalDownloads, 0);
+  const todayDownloadsAllTeams = rawTeamStats.reduce((sum, t) => sum + t.todayDownloads, 0);
+  const periodDownloadsAllTeams = rawTeamStats.reduce((sum, t) => sum + t.periodDownloads, 0);
+  const maxTeamTotal =
+    rawTeamStats.length > 0 ? Math.max(...rawTeamStats.map((t) => t.totalDownloads)) : 0;
+
+  const teamParticipation = rawTeamStats.map((t, idx) => ({
+    ...t,
+    rank: idx + 1,
+    isLeader: t.totalDownloads > 0 && t.totalDownloads === maxTeamTotal,
+    sharePct:
+      totalDownloadsAllTeams > 0 ? Math.round((t.totalDownloads / totalDownloadsAllTeams) * 100) : 0,
+  }));
+
   // Best-effort cleanup of blobs >30 days old
   await pruneOldDays(store, todayKey);
 
@@ -215,6 +340,10 @@ export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurren
     currentQuarter,
     timezone,
     days: validDays,
+    teamParticipation,
+    totalDownloadsAllTeams,
+    todayDownloadsAllTeams,
+    periodDownloadsAllTeams,
     updatedAt: new Date().toISOString(),
   };
 }

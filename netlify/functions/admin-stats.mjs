@@ -1,6 +1,7 @@
 import { verifyAdminToken } from './_lib/admin-auth.mjs';
 import { getActiveSessionStatus } from './session.mjs';
 import { getAggregatedStats } from './_lib/usage-stats.mjs';
+import { getTeamsList } from './_lib/teams-store.mjs';
 
 export default async (req) => {
   if (req.method !== 'GET') {
@@ -17,8 +18,11 @@ export default async (req) => {
     const daysParam = parseInt(url.searchParams.get('days') || '1', 10);
     const days = daysParam === 7 || daysParam === 30 ? daysParam : 1;
 
-    const { activeNow, maxConcurrent } = await getActiveSessionStatus();
-    const stats = await getAggregatedStats({ days, activeNow, maxConcurrent });
+    const [{ activeNow, maxConcurrent }, teams] = await Promise.all([
+      getActiveSessionStatus(),
+      getTeamsList(),
+    ]);
+    const stats = await getAggregatedStats({ days, activeNow, maxConcurrent, teams });
 
     return new Response(JSON.stringify(stats), {
       status: 200,
