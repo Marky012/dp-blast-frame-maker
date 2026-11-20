@@ -189,6 +189,20 @@ Edit [`src/config.js`](./src/config.js):
 
 ## Deployment
 
+### Deploy to Render.com (Free Web Service) + Neon Postgres (Recommended)
+Render Free gives 750 server hours/month and 100 GB bandwidth with zero per-request or per-deploy credit limits. Because Render's free tier has an ephemeral filesystem, pair it with a free **Neon** or **Supabase** PostgreSQL database so uploaded teams, `1500×1500` frames, and participation counts persist across restarts.
+
+1. Create a free PostgreSQL database at [neon.tech](https://neon.tech) (no expiry) and copy its `DATABASE_URL` connection string.
+2. Push this repository to GitHub and open [dashboard.render.com](https://dashboard.render.com) → **New +** → **Blueprint** (to auto-read [`render.yaml`](./render.yaml)) or **Web Service**:
+   - **Build Command:** `npm install && npm run build`
+   - **Start Command:** `npm start`
+   - **Health Check Path:** `/healthz`
+3. Set these **Environment Variables** in Render:
+   - `DATABASE_URL`: your Neon/Supabase Postgres connection string (`postgresql://...`)
+   - `ADMIN_PASSWORD`: your `/admin` login password
+   - `ADMIN_SECRET`: a long random 32+ character string
+4. Deploy — the server automatically creates the `app_blobs` table on first run and keeps live session tracking in memory.
+
 ### Deploy with Netlify CLI
 ```bash
 npm run build

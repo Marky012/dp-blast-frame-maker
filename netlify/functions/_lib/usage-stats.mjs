@@ -1,4 +1,4 @@
-import { getStore } from '@netlify/blobs';
+import { getStorageStore } from './kv-store.mjs';
 import { getEnv } from './env.mjs';
 
 const USAGE_STORE_NAME = 'dp-blast-usage-stats';
@@ -14,7 +14,7 @@ export const QUARTER_META = [
 ];
 
 export function getUsageStore() {
-  return getStore({ name: USAGE_STORE_NAME, consistency: 'strong' });
+  return getStorageStore(USAGE_STORE_NAME);
 }
 
 export function getTimeInfo(now = new Date()) {

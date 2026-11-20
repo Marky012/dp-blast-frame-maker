@@ -1,4 +1,4 @@
-import { getStore } from '@netlify/blobs';
+import { getStorageStore } from './_lib/kv-store.mjs';
 import { getClientIp } from './_lib/env.mjs';
 import {
   getAdminConfig,
@@ -37,7 +37,7 @@ export default async (req, context) => {
   }
 
   const clientIp = getClientIp(req, context);
-  const store = getStore({ name: LOGIN_STORE, consistency: 'strong' });
+  const store = getStorageStore(LOGIN_STORE, { volatile: true });
 
   return await runSerialized(async () => {
     const now = Date.now();

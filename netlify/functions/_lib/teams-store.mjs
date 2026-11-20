@@ -1,4 +1,4 @@
-import { getStore } from '@netlify/blobs';
+import { getStorageStore } from './kv-store.mjs';
 import { generatePlaceholderFramePng } from './png.mjs';
 
 const STORE_NAME = 'dp-blast-store-1500';
@@ -15,7 +15,7 @@ const INITIAL_TEAMS = [
 ];
 
 export function getBlobsStore() {
-  return getStore({ name: STORE_NAME, consistency: 'strong' });
+  return getStorageStore(STORE_NAME);
 }
 
 /**

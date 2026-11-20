@@ -10,7 +10,7 @@ export function getAdminConfig() {
     return {
       configured: false,
       error:
-        'Admin authentication is not configured. Please set both ADMIN_PASSWORD and ADMIN_SECRET environment variables in your Netlify dashboard (Project configuration > Environment variables) or local .env file.',
+        'Admin authentication is not configured. Please set both ADMIN_PASSWORD and ADMIN_SECRET in your hosting environment variables (Render / Netlify) or local .env file.',
     };
   }
   return {

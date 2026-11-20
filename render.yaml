@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: sg-dp-blast
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: MAX_CONCURRENT
+        value: "50"
+      - key: MAX_PER_IP
+        value: "3"
+      - key: SESSION_TTL_SECONDS
+        value: "60"
+      - key: START_LIMIT_PER_WINDOW
+        value: "10"
+      - key: TIMEZONE
+        value: Asia/Manila

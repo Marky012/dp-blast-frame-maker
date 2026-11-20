@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { getStore } from '@netlify/blobs';
+import { getStorageStore } from './_lib/kv-store.mjs';
 import { getEnv, getClientIp } from './_lib/env.mjs';
 import { recordSessionStartEvent, recordTeamParticipation } from './_lib/usage-stats.mjs';
 import { getTeamsList } from './_lib/teams-store.mjs';
@@ -26,7 +26,7 @@ export function getLimits() {
 }
 
 export function getGatekeeperStore() {
-  return getStore({ name: GATEKEEPER_STORE, consistency: 'strong' });
+  return getStorageStore(GATEKEEPER_STORE, { volatile: true });
 }
 
 export async function getActiveSessionStatus() {
