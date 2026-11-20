@@ -1,10 +1,15 @@
-import { getStorageStore } from './kv-store.mjs';
+import { getStorageStore, isNodeServerRuntime } from './kv-store.mjs';
 import { getEnv } from './env.mjs';
 
 const USAGE_STORE_NAME = 'dp-blast-usage-stats';
 const TEAM_TOTALS_KEY = 'team-participation-totals';
 const DEFAULT_TIMEZONE = 'Asia/Manila';
 const RETENTION_DAYS = 30;
+const STATS_FLUSH_INTERVAL_MS = 5000;
+
+const pendingSessionEvents = new Map();
+let flushTimer = null;
+let flushPromise = Promise.resolve();
 
 export const QUARTER_META = [
   { key: 'Q1', label: 'Q1 (12am–6am)', range: '12:00am–5:59am' },
@@ -134,45 +139,122 @@ async function pruneOldDays(store, todayDateKey) {
   }
 }
 
-/**
- * Records a /api/session/start outcome ('started' | 'rejectedFull' | 'rejectedIp')
- * into today's counter blob keyed by date in TIMEZONE. Stores zero PII or IPs.
- */
-export async function recordSessionStartEvent({ outcome, activeCount = 0 }) {
-  const store = getUsageStore();
-  const { dateKey, quarterKey } = getTimeInfo();
-
-  const existing = await store.get(dateKey, { type: 'json', consistency: 'strong' });
-  const isNewDay = !existing;
-  const dayData = existing && typeof existing === 'object' ? existing : createEmptyDay(dateKey);
-
+function applySessionDelta(dayData, quarterKey, delta) {
   if (!dayData.quarters) {
-    dayData.quarters = createEmptyDay(dateKey).quarters;
+    dayData.quarters = createEmptyDay(dayData.date).quarters;
   }
   if (!dayData.quarters[quarterKey]) {
     dayData.quarters[quarterKey] = createEmptyQuarter();
   }
 
   const q = dayData.quarters[quarterKey];
-  const countNum = Math.max(0, Number(activeCount) || 0);
+  dayData.sessionsStarted = (dayData.sessionsStarted || 0) + delta.started;
+  q.sessionsStarted = (q.sessionsStarted || 0) + delta.started;
 
-  if (outcome === 'started') {
-    dayData.sessionsStarted = (dayData.sessionsStarted || 0) + 1;
-    q.sessionsStarted = (q.sessionsStarted || 0) + 1;
-  } else if (outcome === 'rejectedFull') {
-    dayData.rejectedFull = (dayData.rejectedFull || 0) + 1;
-    q.rejectedFull = (q.rejectedFull || 0) + 1;
-  } else if (outcome === 'rejectedIp') {
-    dayData.rejectedIp = (dayData.rejectedIp || 0) + 1;
-    q.rejectedIp = (q.rejectedIp || 0) + 1;
+  dayData.rejectedFull = (dayData.rejectedFull || 0) + delta.rejectedFull;
+  q.rejectedFull = (q.rejectedFull || 0) + delta.rejectedFull;
+
+  dayData.rejectedIp = (dayData.rejectedIp || 0) + delta.rejectedIp;
+  q.rejectedIp = (q.rejectedIp || 0) + delta.rejectedIp;
+
+  dayData.peakConcurrent = Math.max(dayData.peakConcurrent || 0, delta.peakConcurrent);
+  q.peakConcurrent = Math.max(q.peakConcurrent || 0, delta.peakConcurrent);
+}
+
+/**
+ * Flushes coalesced session start/rejection metrics to persistent storage.
+ */
+export async function flushPendingSessionEvents() {
+  if (flushTimer) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
   }
 
-  dayData.peakConcurrent = Math.max(dayData.peakConcurrent || 0, countNum);
-  q.peakConcurrent = Math.max(q.peakConcurrent || 0, countNum);
+  if (pendingSessionEvents.size === 0) {
+    await flushPromise;
+    return;
+  }
 
-  await store.setJSON(dateKey, dayData);
+  const entries = Array.from(pendingSessionEvents.entries());
+  pendingSessionEvents.clear();
 
-  if (isNewDay) {
+  const runFlush = flushPromise.then(async () => {
+    const store = getUsageStore();
+    for (const [, bucket] of entries) {
+      try {
+        const res = await mutateJsonBlob(
+          store,
+          bucket.dateKey,
+          () => createEmptyDay(bucket.dateKey),
+          (dayData) => applySessionDelta(dayData, bucket.quarterKey, bucket)
+        );
+        if (res?.isNew) {
+          await pruneOldDays(store, bucket.dateKey);
+        }
+      } catch (err) {
+        console.error('Failed to flush session usage stats:', err);
+      }
+    }
+  });
+
+  flushPromise = runFlush.catch(() => {});
+  await runFlush;
+}
+
+/**
+ * Records a /api/session/start outcome ('started' | 'rejectedFull' | 'rejectedIp')
+ * into today's counter blob keyed by date in TIMEZONE. Stores zero PII or IPs.
+ * On Node/Render, writes are coalesced in memory every 5s to protect CPU and DB limits.
+ */
+export async function recordSessionStartEvent({ outcome, activeCount = 0 }) {
+  const { dateKey, quarterKey } = getTimeInfo();
+  const countNum = Math.max(0, Number(activeCount) || 0);
+
+  if (isNodeServerRuntime()) {
+    const bucketKey = `${dateKey}|${quarterKey}`;
+    let bucket = pendingSessionEvents.get(bucketKey);
+    if (!bucket) {
+      bucket = {
+        dateKey,
+        quarterKey,
+        started: 0,
+        rejectedFull: 0,
+        rejectedIp: 0,
+        peakConcurrent: 0,
+      };
+      pendingSessionEvents.set(bucketKey, bucket);
+    }
+
+    if (outcome === 'started') bucket.started += 1;
+    else if (outcome === 'rejectedFull') bucket.rejectedFull += 1;
+    else if (outcome === 'rejectedIp') bucket.rejectedIp += 1;
+    bucket.peakConcurrent = Math.max(bucket.peakConcurrent, countNum);
+
+    if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flushPendingSessionEvents().catch(() => {});
+      }, STATS_FLUSH_INTERVAL_MS);
+      flushTimer.unref?.();
+    }
+    return;
+  }
+
+  const store = getUsageStore();
+  const res = await mutateJsonBlob(
+    store,
+    dateKey,
+    () => createEmptyDay(dateKey),
+    (dayData) =>
+      applySessionDelta(dayData, quarterKey, {
+        started: outcome === 'started' ? 1 : 0,
+        rejectedFull: outcome === 'rejectedFull' ? 1 : 0,
+        rejectedIp: outcome === 'rejectedIp' ? 1 : 0,
+        peakConcurrent: countNum,
+      })
+  );
+
+  if (res?.isNew) {
     await pruneOldDays(store, dateKey);
   }
 }
@@ -271,6 +353,7 @@ export async function setTeamParticipationCount({ teamId, count }) {
  * Aggregates usage counters across the last `days` (1, 7, or 30) in TIMEZONE.
  */
 export async function getAggregatedStats({ days = 1, activeNow = 0, maxConcurrent = 50, teams = [] }) {
+  await flushPendingSessionEvents();
   const store = getUsageStore();
   const { timezone, dateKey: todayKey, quarterKey: currentQuarter } = getTimeInfo();
 

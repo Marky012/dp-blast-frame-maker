@@ -1,8 +1,23 @@
-import { getStorageStore } from './kv-store.mjs';
+import { getStorageStore, isNodeServerRuntime } from './kv-store.mjs';
 import { generatePlaceholderFramePng } from './png.mjs';
 
 const STORE_NAME = 'dp-blast-store-1500';
 const TEAMS_KEY = 'teams';
+const TEAMS_CACHE_TTL_MS = 15000;
+const MAX_CACHED_FRAMES = 25;
+
+let cachedTeamsList = null;
+let cachedTeamsAt = 0;
+const frameCache = new Map(); // teamId -> ArrayBuffer
+
+function setCachedFrame(teamId, buf) {
+  if (!isNodeServerRuntime() || !buf) return;
+  if (!frameCache.has(teamId) && frameCache.size >= MAX_CACHED_FRAMES) {
+    const oldestKey = frameCache.keys().next().value;
+    frameCache.delete(oldestKey);
+  }
+  frameCache.set(teamId, buf);
+}
 
 const INITIAL_TEAMS = [
   { id: 'team-1', name: 'Team 1', accentColor: '#e11d48', frameVersion: 1, order: 0 },
@@ -23,6 +38,10 @@ export function getBlobsStore() {
  * Seeding happens only once because once initialized, "teams" is a JSON array (even if later emptied to []).
  */
 export async function getTeamsList() {
+  if (isNodeServerRuntime() && cachedTeamsList && Date.now() - cachedTeamsAt < TEAMS_CACHE_TTL_MS) {
+    return [...cachedTeamsList];
+  }
+
   const store = getBlobsStore();
   let teams = await store.get(TEAMS_KEY, { type: 'json', consistency: 'strong' });
 
@@ -31,9 +50,11 @@ export async function getTeamsList() {
     for (let i = 0; i < INITIAL_TEAMS.length; i++) {
       const t = INITIAL_TEAMS[i];
       const pngBuf = generatePlaceholderFramePng(t.accentColor, i + 1);
-      await store.set(t.id, pngBuf.buffer.slice(pngBuf.byteOffset, pngBuf.byteOffset + pngBuf.byteLength), {
+      const ab = pngBuf.buffer.slice(pngBuf.byteOffset, pngBuf.byteOffset + pngBuf.byteLength);
+      await store.set(t.id, ab, {
         metadata: { contentType: 'image/png', frameVersion: t.frameVersion },
       });
+      setCachedFrame(t.id, ab);
     }
     const writeRes = await store.setJSON(TEAMS_KEY, INITIAL_TEAMS, { onlyIfNew: true });
     if (writeRes && writeRes.modified === false) {
@@ -47,7 +68,12 @@ export async function getTeamsList() {
     teams = [];
   }
 
-  return [...teams].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const sorted = [...teams].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  if (isNodeServerRuntime()) {
+    cachedTeamsList = sorted;
+    cachedTeamsAt = Date.now();
+  }
+  return sorted;
 }
 
 export async function saveTeamsList(teams) {
@@ -60,19 +86,31 @@ export async function saveTeamsList(teams) {
     order: idx,
   }));
   await store.setJSON(TEAMS_KEY, normalized);
+  if (isNodeServerRuntime()) {
+    cachedTeamsList = normalized;
+    cachedTeamsAt = Date.now();
+  }
   return normalized;
 }
 
 export async function getFrameBytes(teamId) {
+  if (isNodeServerRuntime() && frameCache.has(teamId)) {
+    return frameCache.get(teamId);
+  }
+
   const store = getBlobsStore();
   let buf = await store.get(teamId, { type: 'arrayBuffer', consistency: 'strong' });
   if (!buf) {
     // Ensure seeded if store hasn't been initialized yet
+    cachedTeamsAt = 0;
     const teams = await getTeamsList();
     const matched = teams.find((t) => t.id === teamId);
     if (matched) {
       buf = await store.get(teamId, { type: 'arrayBuffer', consistency: 'strong' });
     }
+  }
+  if (buf) {
+    setCachedFrame(teamId, buf);
   }
   return buf;
 }
@@ -86,9 +124,13 @@ export async function saveFrameBytes(teamId, pngBuffer, frameVersion = 1) {
   await store.set(teamId, arrayBuffer, {
     metadata: { contentType: 'image/png', frameVersion },
   });
+  setCachedFrame(teamId, arrayBuffer);
+  cachedTeamsAt = 0;
 }
 
 export async function deleteFrameBytes(teamId) {
   const store = getBlobsStore();
   await store.delete(teamId);
+  frameCache.delete(teamId);
+  cachedTeamsAt = 0;
 }

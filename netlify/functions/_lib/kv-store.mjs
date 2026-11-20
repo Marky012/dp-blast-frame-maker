@@ -181,7 +181,7 @@ async function getPgPool() {
     pgPool = new Pool({
       connectionString: cleanConnectionString,
       ssl: useSsl ? { rejectUnauthorized: false } : false,
-      max: 10,
+      max: 4,
       idleTimeoutMillis: 30000,
     });
     pgPoolUrl = databaseUrl;
